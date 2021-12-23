@@ -32,13 +32,12 @@
 
 #pragma once
 
-#include <kitty/constructors.hpp>
-#include <kitty/dynamic_truth_table.hpp>
-#include <kitty/operations.hpp>
-
 #include "../utils/node_map.hpp"
 #include "miter.hpp"
 #include "simulation.hpp"
+#include <kitty/constructors.hpp>
+#include <kitty/dynamic_truth_table.hpp>
+#include <kitty/operations.hpp>
 
 namespace mockturtle
 {
@@ -55,6 +54,45 @@ struct simulation_cec_stats
 
 namespace detail
 {
+class cecSimulator
+{
+public:
+  int v;
+  int s;
+  int r;
+  cecSimulator() = delete;
+  cecSimulator( int v, int s, int r ) : v( v ), s( s ), r( r ) {}
+  kitty ::dynamic_truth_table compute_constant( bool value ) const
+  {
+
+    kitty::dynamic_truth_table tt( s );
+    return value ? ~tt : tt;
+  }
+  kitty::dynamic_truth_table compute_pi( uint32_t index ) const
+  {
+    kitty::dynamic_truth_table tt( s );
+
+    if ( index < s )
+    {
+      kitty::create_nth_var( tt, index );
+    }
+    else
+    {
+      tt = value_t( index ) ? tt : ~tt;
+    }
+    return tt;
+  }
+  kitty::dynamic_truth_table compute_not( kitty::dynamic_truth_table const& value ) const
+  {
+    return ~value;
+  }
+
+private:
+  bool value_t( int index ) const
+  {
+    return ( ( r >> ( index - s ) ) & 1 );
+  }
+};
 
 template<class Ntk>
 class simulation_cec_impl
@@ -73,22 +111,76 @@ public:
 
   bool run()
   {
-    /* TODO: write your implementation here */
-    return false;
+
+    int var = num_var();
+    int V = num_nodes();
+    _st.rounds = num_round();
+    _st.split_var = split_var();
+    for ( int i = 0; i < _st.rounds; i++ )
+    {
+      cecSimulator simulator( var, _st.split_var, i );
+      const std::vector<kitty::dynamic_truth_table> result = simulate<kitty::dynamic_truth_table>( _ntk, simulator );
+      for ( auto& po : result )
+      {
+        if ( !kitty::is_const0( po ) )
+        {
+          return false;
+        }
+      }
+    }
+    return true;
   }
 
 private:
-  /* you can add additional methods here */
+  int num_round()
+  {
+    int n = num_var();
+    int split = split_var();
+    int t = n - split;
+    int num_of_round = pow( 2, t );
+    return num_of_round;
+  }
+
+  int max_value_m()
+  {
+    int n = num_var();
+    int V = num_nodes();
+    int m = 7;
+    while ( m < n && ( 32 + pow( 2, ( m - 3 + 1 ) ) ) * V <= pow( 2, 29 ) )
+    {
+      m++;
+    }
+    return m;
+  }
+
+  int num_nodes()
+  {
+    int w = _ntk.size();
+    return w;
+  }
+  int num_var()
+  {
+    int z = _ntk.num_pis();
+    return z;
+  }
+
+  int split_var()
+  {
+    int y = max_value_m();
+    int x = num_var();
+    if ( x < 6 )
+      return x;
+    else
+      return y;
+  }
 
 private:
   Ntk& _ntk;
   simulation_cec_stats& _st;
+
   /* you can add other attributes here */
 };
 
-
-
-osama
 } // namespace detail
 
 /* Entry point for users to call */
